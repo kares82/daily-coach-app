@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Daily Coach</title>
+    <link rel="manifest" href="manifest.webmanifest">
+    <meta name="theme-color" content="#0B0B14">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Daily Coach">
+    <link rel="apple-touch-icon" href="icon-180.png">
+    <link rel="icon" href="icon-192.png">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,300;0,400;0,500;0,600;1,400;1,500&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0B0B14;
+            --bg-2: #15142B;
+            --text: #F5F5F7;
+            --text-dim: #9C9CA6;
+            --line: #2A2A38;
+            --blue: #0A84FF;
+            --indigo: #5E5CE6;
+            --purple: #AF52DE;
+            --pink: #FF375F;
+            --green: #32D74B;
+            --danger: #FF1744;
+            --accent: #5E5CE6;
+        }
+        body {
+            background: radial-gradient(ellipse at 50% 10%, var(--bg-2), var(--bg) 60%);
+            color: var(--text);
+            font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+        }
+        .font-serif { font-family: 'Fraunces', Georgia, serif; }
+        .font-mono { font-family: 'IBM Plex Mono', ui-monospace, monospace; }
+        input, textarea, select { background: var(--bg); color: var(--text); }
+        input::placeholder, textarea::placeholder { color: var(--text-dim); }
+        .grad-btn { background: var(--indigo); color: #fff; font-weight: 600; }
+        .pulse-alert { animation: pulseAlert 1s ease-in-out infinite; }
+        @keyframes pulseAlert { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+        @media (prefers-reduced-motion: reduce) { .pulse-alert { animation: none; } }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+    
+
+    <svg id="bgWaves" class="fixed inset-0 w-full h-full" style="z-index:0" preserveAspectRatio="xMidYMid slice" viewBox="0 0 800 900">
+        <defs>
+            <linearGradient id="waveGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stop-color="#FF453A"/>
+                <stop offset="14%" stop-color="#FF9F0A"/>
+                <stop offset="28%" stop-color="#FFD60A"/>
+                <stop offset="42%" stop-color="#32D74B"/>
+                <stop offset="56%" stop-color="#64D2FF"/>
+                <stop offset="70%" stop-color="#0A84FF"/>
+                <stop offset="82%" stop-color="#5E5CE6"/>
+                <stop offset="92%" stop-color="#AF52DE"/>
+                <stop offset="100%" stop-color="#FF375F"/>
+            </linearGradient>
+        </defs>
+        <g id="waveStrands"></g>
+    </svg>
+
+    <div class="max-w-md mx-auto w-full flex-1 flex flex-col relative">
+
+        <!-- Header: minimal -->
+        <header class="flex justify-between items-center px-5 py-4 relative z-10">
+            <span class="font-serif italic text-sm" style="color: var(--text)">Daily Coach</span>
+            <button onclick="openMenu()" class="hover:text-[var(--text)] transition text-sm" style="color: var(--text-dim)" aria-label="Menu">
+                <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M2 5h14M2 9h14M2 13h14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+            </button>
+        </header>
+
+        <!-- Hero: the assignment (or capture prompt if empty) -->
+        <main class="flex-1 flex items-center justify-center px-6 relative overflow-hidden z-10">
+            <div class="absolute inset-0 pointer-events-none" style="background: radial-gradient(ellipse 280px 240px at 50% 50%, rgba(11,11,20,0.62), transparent 72%)"></div>
+            <div id="heroContent" class="relative z-10 text-center space-y-5 py-16"></div>
+        </main>
+
+        <!-- Capture bar: fixed at bottom, always reachable -->
+        <footer class="border-t px-4 py-3 space-y-2 backdrop-blur relative z-10" style="border-color: var(--line); background: rgba(11,11,20,0.68)">
+            <div class="flex items-center gap-2 flex-wrap">
+                <button id="tagWorkBtn" onclick="setTag('work')" class="text-[10px] font-medium px-2.5 py-1 rounded-full border transition" style="border-color: var(--line); color: var(--text-dim)">Work</button>
+                <button id="tagPersonalBtn" onclick="setTag('personal')" class="text-[10px] font-medium px-2.5 py-1 rounded-full border transition" style="border-color: var(--line); color: var(--text-dim)">Personal</button>
+                <label class="flex items-center gap-1.5 text-[10px] ml-auto cursor-pointer" style="color: var(--text-dim)">
+                    <input type="checkbox" id="parkToggle" onchange="toggleParkRow()" style="accent-color: var(--indigo)">
+                    Park this
+                </label>
+            </div>
+            <div class="flex items-center gap-1.5">
+                <span class="text-[9px] uppercase tracking-wide" style="color: var(--text-dim)">When</span>
+                <button id="urgNowBtn" onclick="setUrgency('now')" class="text-[10px] font-medium px-2 py-1 rounded-full border transition" style="border-color: var(--line); color: var(--text-dim)">Now</button>
+                <button id="urgTodayBtn" onclick="setUrgency('today')" class="text-[10px] font-medium px-2 py-1 rounded-full border transition" style="border-color: var(--line); color: var(--text-dim)">Today</button>
+                <button id="urgWeekBtn" onclick="setUrgency('week')" class="text-[10px] font-medium px-2 py-1 rounded-full border transition" style="border-color: var(--line); color: var(--text-dim)">This week</button>
+                <button id="urgWheneverBtn" onclick="setUrgency('whenever')" class="text-[10px] font-medium px-2 py-1 rounded-full border transition" style="border-color: var(--line); color: var(--text-dim)">Whenever</button>
+            </div>
+            <div id="parkPlanRow" class="hidden">
+                <input id="parkPlanInput" type="text" placeholder="When will you come back to this?" class="w-full border rounded-lg px-3 py-1.5 text-xs focus:outline-none transition" style="border-color: var(--line)" onfocus="this.style.borderColor='var(--indigo)'" onblur="this.style.borderColor='var(--line)'">
+            </div>
+            <div class="flex gap-2 items-end">
+                <textarea id="captureInput" rows="1" placeholder="What's in your head?" class="flex-1 border rounded-xl px-3 py-2 text-sm resize-none focus:outline-none transition" style="border-color: var(--line)" onfocus="this.style.borderColor='var(--indigo)'" onblur="this.style.borderColor='var(--line)'"></textarea>
+                <button id="micBtn" onclick="toggleVoice()" class="w-9 h-9 shrink-0 rounded-full border flex items-center justify-center transition" style="border-color: var(--line); color: var(--text-dim)" aria-label="Voice capture">
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="5" y="1" width="4" height="7" rx="2" stroke="currentColor" stroke-width="1.2"/><path d="M2.5 6.5a4.5 4.5 0 0 0 9 0M7 11v2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+                </button>
+                <button onclick="submitCapture()" class="w-9 h-9 shrink-0 rounded-full grad-btn flex items-center justify-center transition" aria-label="Capture">
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 7h10M8 3l4 4-4 4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+            </div>
+        </footer>
+
+        <!-- Slide-over menu: history, settings, verification -->
+        <div id="menuOverlay" class="hidden fixed inset-0 z-50">
+            <div class="absolute inset-0 bg-black/50" onclick="closeMenu()"></div>
+            <div class="absolute right-0 top-0 h-full w-[88%] max-w-sm border-l flex flex-col" style="background: var(--bg-2); border-color: var(--line)">
+                <div class="flex items-center justify-between px-4 py-4 border-b" style="border-color: var(--line)">
+                    <div class="flex gap-4 text-xs">
+                        <button id="menutab-history" onclick="switchMenuPanel('history')" class="font-medium" style="color: var(--text)">History</button>
+                        <button id="menutab-verify" onclick="switchMenuPanel('verify')" class="font-medium" style="color: var(--text-dim)">Verify</button>
+                        <button id="menutab-settings" onclick="switchMenuPanel('settings')" class="font-medium" style="color: var(--text-dim)">Settings</button>
+                    </div>
+                    <button onclick="closeMenu()" style="color: var(--text-dim)" aria-label="Close">
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 2l12 12M14 2L2 14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+                    </button>
+                </div>
+
+                <div class="flex-1 overflow-y-auto p-4">
+                    <div id="menuPanel-history" class="space-y-2"></div>
+
+                    <div id="menuPanel-verify" class="hidden space-y-3"></div>
+
+                    <div id="menuPanel-settings" class="hidden space-y-5">
+                        <div class="space-y-2">
+                            <span class="text-xs font-medium block" style="color: var(--text)">Availability windows</span>
+                            <div class="flex items-center gap-2 text-xs">
+                                <span class="w-14" style="color: var(--text-dim)">Work</span>
+                                <input id="workStart" type="time" value="09:00" class="border rounded px-2 py-1 text-xs" style="border-color: var(--line)">
+                                <span style="color: var(--text-dim)">to</span>
+                                <input id="workEnd" type="time" value="17:00" class="border rounded px-2 py-1 text-xs" style="border-color: var(--line)">
+                            </div>
+                            <p class="text-[10px] leading-relaxed" style="color: var(--text-dim)">Work-tagged items can surface during this window. Everything else waits until you're free.</p>
+                        </div>
+
+                        <div class="space-y-2">
+                            <span class="text-xs font-medium block" style="color: var(--text)">Home location</span>
+                            <button onclick="setHomeLocation()" class="text-[10px] font-medium px-3 py-1.5 rounded-lg border transition" style="border-color: var(--line); color: var(--text-dim)">Set current location as home</button>
+                            <p id="homeStatus" class="text-[10px]" style="color: var(--text-dim)">Not set — required to verify "outside" assignments.</p>
+                        </div>
+
+                        <div class="space-y-2 pt-3 border-t" style="border-color: var(--line)">
+                            <span class="text-[10px] font-medium uppercase tracking-wide block" style="color: var(--text-dim)">Demo controls — not part of the real product</span>
+                            <button onclick="simulateIgnore()" class="text-[10px] font-medium px-3 py-1.5 rounded-lg border transition mr-2" style="border-color: var(--danger); color: var(--danger)">Simulate: still ignoring it</button>
+                            <button onclick="resetDemo()" class="text-[10px] font-medium px-3 py-1.5 rounded-lg border transition" style="border-color: var(--line); color: var(--text-dim)">Reset demo data</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    
+    <script>
+        // ===================== Data =====================
+        let entries = [];
+        let idCounter = 0;
+        let settings = { homeLat: null, homeLng: null };
+
+        // ===================== Persistence (this phone only) =====================
+        const STORE_KEY = 'dailycoach.v1';
+        function save() {
+            try {
+                localStorage.setItem(STORE_KEY, JSON.stringify({ entries: entries, idCounter: idCounter, settings: settings }));
+            } catch (err) { /* private mode or storage full: app still works this session */ }
+        }
+        function load() {
+            try {
+                const raw = localStorage.getItem(STORE_KEY);
+                if (!raw) return;
+                const d = JSON.parse(raw);
+                if (Array.isArray(d.entries)) entries = d.entries;
+                if (typeof d.idCounter === 'number') idCounter = d.idCounter;
+                if (d.settings) settings = Object.assign(settings, d.settings);
+            } catch (err) { /* corrupt store: fall back to empty */ }
+        }
+        let currentTag = null;
+        let currentUrgency = null;
+        const URGENCY_RANK = { now: 0, today: 1, week: 2, whenever: 3 };
+
+        // ===================== Utilities =====================
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.innerText = str == null ? '' : str;
+            return div.innerHTML;
+        }
+        function physicalLabel(p) {
+            return p === 'exercise' ? '🏃 Exercise' : p === 'cook' ? '🍳 Cook' : p === 'outside' ? '🌿 Outside' : '';
+        }
+
+        // ===================== Background Wave Mesh =====================
+        function wavePath(width, baseY, amplitude, freq, phase, segments) {
+            let d = '';
+            for (let i = 0; i <= segments; i++) {
+                const x = (i / segments) * width;
+                const y = baseY + amplitude * Math.sin(freq * (x / width) * Math.PI * 2 + phase);
+                d += (i === 0 ? 'M' : 'L') + x.toFixed(1) + ',' + y.toFixed(1) + ' ';
+            }
+            return d;
+        }
+        function renderBackgroundWaves() {
+            const g = document.getElementById('waveStrands');
+            const strandCount = 5;
+            let html = '';
+            for (let i = 0; i < strandCount; i++) {
+                const baseY = 90 + (i / (strandCount - 1)) * 720;
+                const amplitude = 35 + (i % 3) * 10;
+                const freq = 1.1 + (i % 3) * 0.15;
+                const phase = i * 0.35;
+                const opacity = 0.32;
+                const d = wavePath(800, baseY, amplitude, freq, phase, 160);
+                html += `<path d="${d}" fill="none" stroke="url(#waveGrad)" stroke-width="1.4" opacity="${opacity}"/>`;
+            }
+            g.innerHTML = html;
+        }
+
+        // ===================== Assignment Engine =====================
+        function pendingEntries() {
+            return entries.filter(function (e) { return !e.completed && !e.parked; });
+        }
+        function getCurrentAssignment() {
+            const p = pendingEntries();
+            if (p.length === 0) return null;
+            return p.slice().sort(function (a, b) {
+                const ur = (URGENCY_RANK[a.urgency] ?? 3) - (URGENCY_RANK[b.urgency] ?? 3);
+                if (ur !== 0) return ur;
+                if (!a.deadline && !b.deadline) return 0;
+                if (!a.deadline) return 1;
+                if (!b.deadline) return -1;
+                return a.deadline.localeCompare(b.deadline);
+            })[0];
+        }
+
+        function renderHero() {
+            const el = document.getElementById('heroContent');
+            const a = getCurrentAssignment();
+
+            if (!a) {
+                el.innerHTML = `
+                    <p class="font-serif italic text-lg" style="color: var(--text)">What's in your head?</p>
+                    <p class="text-xs" style="color: var(--text-dim)">Nothing queued. Drop a thought below.</p>
+                `;
+                return;
+            }
+
+            const tier = a.escalationTier || 0;
+            const isCritical = tier >= 2;
+            const actionClass = isCritical ? 'pulse-alert' : 'grad-btn';
+            const actionStyle = isCritical ? 'background: var(--text); color: var(--bg)' : '';
+            const tierLine = tier === 0 ? '' :
+                tier === 1 ? `<p class="text-xs font-medium" style="color: var(--indigo)">Still on this?</p>` :
+                `<p class="text-xs font-medium" style="color: var(--danger)">This was assigned. Close everything else until it's done.</p>`;
+
+            let actionHtml = '';
+            if (a.physical) {
+                actionHtml = `
+                    <button onclick="openMenu(); switchMenuPanel('verify')" class="text-xs font-semibold px-5 py-2 rounded-full transition ${actionClass}" style="${actionStyle}">
+                        Verify & Complete
+                    </button>
+                    <p class="text-[10px]" style="color: var(--text-dim)">${physicalLabel(a.physical)} — verified in the menu, not by tapping done.</p>
+                `;
+            } else {
+                actionHtml = `
+                    <button onclick="completeAssignment(${a.id})" class="text-xs font-semibold px-5 py-2 rounded-full transition ${actionClass}" style="${actionStyle}">
+                        Done
+                    </button>
+                `;
+            }
+
+            el.innerHTML = `
+                <p class="font-serif italic text-xs" style="color: var(--text-dim)">Your one thing</p>
+                <h1 class="font-serif text-2xl leading-snug px-2" style="color: var(--text)">${escapeHtml(a.text)}</h1>
+                ${a.deadline ? `<p class="font-mono text-[11px]" style="color: var(--text-dim)">before ${a.deadline}</p>` : ''}
+                ${tierLine}
+                <div class="pt-2 space-y-2 flex flex-col items-center">${actionHtml}</div>
+            `;
+        }
+
+        function completeAssignment(id) {
+            const e = entries.find(function (x) { return x.id === id; });
+            if (e) { e.completed = true; e.escalationTier = 0; }
+            renderAll();
+        }
+
+        function simulateIgnore() {
+            const a = getCurrentAssignment();
+            if (!a) return;
+            a.escalationTier = Math.min((a.escalationTier || 0) + 1, 2);
+            renderAll();
+        }
+
+        // ===================== Capture =====================
+        function setTag(tag) {
+            currentTag = tag;
+            document.getElementById('tagWorkBtn').style.borderColor = tag === 'work' ? 'var(--indigo)' : 'var(--line)';
+            document.getElementById('tagWorkBtn').style.color = tag === 'work' ? 'var(--indigo)' : 'var(--text-dim)';
+            document.getElementById('tagPersonalBtn').style.borderColor = tag === 'personal' ? 'var(--indigo)' : 'var(--line)';
+            document.getElementById('tagPersonalBtn').style.color = tag === 'personal' ? 'var(--indigo)' : 'var(--text-dim)';
+        }
+        function setUrgency(u) {
+            currentUrgency = u;
+            const map = { now: 'urgNowBtn', today: 'urgTodayBtn', week: 'urgWeekBtn', whenever: 'urgWheneverBtn' };
+            Object.keys(map).forEach(function (key) {
+                const btn = document.getElementById(map[key]);
+                btn.style.borderColor = key === u ? 'var(--indigo)' : 'var(--line)';
+                btn.style.color = key === u ? 'var(--indigo)' : 'var(--text-dim)';
+            });
+        }
+        function toggleParkRow() {
+            const checked = document.getElementById('parkToggle').checked;
+            document.getElementById('parkPlanRow').classList.toggle('hidden', !checked);
+        }
+        function submitCapture() {
+            const input = document.getElementById('captureInput');
+            const text = input.value.trim();
+            if (!text) return;
+            if (!currentTag) { setTag('personal'); }
+            if (!currentUrgency) { setUrgency('today'); }
+
+            const parked = document.getElementById('parkToggle').checked;
+            const resumePlan = document.getElementById('parkPlanInput').value.trim();
+            if (parked && !resumePlan) {
+                document.getElementById('parkPlanInput').focus();
+                return;
+            }
+
+            idCounter += 1;
+            entries.push({
+                id: idCounter,
+                text: text,
+                tag: currentTag || 'personal',
+                urgency: currentUrgency || 'today',
+                parked: parked,
+                resumePlan: parked ? resumePlan : null,
+                deadline: null,
+                physical: null,
+                completed: false,
+                verified: false,
+                escalationTier: 0
+            });
+
+            input.value = '';
+            document.getElementById('parkToggle').checked = false;
+            document.getElementById('parkPlanInput').value = '';
+            document.getElementById('parkPlanRow').classList.add('hidden');
+            setTag(null);
+            setUrgency(null);
+            renderAll();
+        }
+
+        // ===================== Voice Capture (Web Speech API) =====================
+        let recognition = null;
+        let recognizing = false;
+        (function initSpeech() {
+            const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SR) return;
+            recognition = new SR();
+            recognition.continuous = false;
+            recognition.interimResults = false;
+            recognition.onresult = function (e) {
+                const text = e.results[0][0].transcript;
+                const input = document.getElementById('captureInput');
+                input.value = (input.value ? input.value + ' ' : '') + text;
+            };
+            recognition.onend = function () { recognizing = false; updateMicBtn(); };
+            recognition.onerror = function () { recognizing = false; updateMicBtn(); };
+        })();
+        function updateMicBtn() {
+            const btn = document.getElementById('micBtn');
+            btn.style.borderColor = recognizing ? 'var(--danger)' : 'var(--line)';
+            btn.style.color = recognizing ? 'var(--danger)' : 'var(--text-dim)';
+        }
+        function toggleVoice() {
+            if (!recognition) { alert('Voice capture needs Chrome or a browser with Web Speech API support.'); return; }
+            if (recognizing) { recognition.stop(); recognizing = false; }
+            else { recognition.start(); recognizing = true; }
+            updateMicBtn();
+        }
+
+        // ===================== Menu =====================
+        function openMenu() {
+            document.getElementById('menuOverlay').classList.remove('hidden');
+            switchMenuPanel('history');
+        }
+        function closeMenu() {
+            document.getElementById('menuOverlay').classList.add('hidden');
+        }
+        function switchMenuPanel(panel) {
+            ['history', 'verify', 'settings'].forEach(function (p) {
+                document.getElementById('menuPanel-' + p).classList.toggle('hidden', p !== panel);
+                document.getElementById('menutab-' + p).style.color = p === panel ? 'var(--text)' : 'var(--text-dim)';
+            });
+            if (panel === 'history') renderHistory();
+            if (panel === 'verify') renderVerify();
+        }
+
+        // ===================== History =====================
+        function renderHistory() {
+            const el = document.getElementById('menuPanel-history');
+            const list = entries.slice().reverse();
+            if (list.length === 0) {
+                el.innerHTML = `<p class="text-[10px]" style="color: var(--text-dim)">Nothing captured yet.</p>`;
+                return;
+            }
+            el.innerHTML = list.map(function (e) {
+                const status = e.completed ? 'Done' : e.parked ? 'Parked' : 'Pending';
+                const statusColor = e.completed ? 'var(--indigo)' : e.parked ? 'var(--text-dim)' : 'var(--text)';
+                return `
+                    <div class="p-2.5 rounded-lg border" style="border-color: var(--line)">
+                        <div class="flex justify-between items-start gap-2">
+                            <span class="text-xs" style="color: var(--text)">${escapeHtml(e.text)}</span>
+                            <button onclick="deleteEntry(${e.id})" class="text-[10px] shrink-0" style="color: var(--danger)">Del</button>
+                        </div>
+                        <div class="flex flex-wrap gap-1.5 mt-1.5 text-[9px] font-mono" style="color: var(--text-dim)">
+                            <span>${e.tag}</span>
+                            <span>${e.urgency || 'today'}</span>
+                            ${e.physical ? `<span>${physicalLabel(e.physical)}</span>` : ''}
+                            ${e.deadline ? `<span>${e.deadline}</span>` : ''}
+                            <span style="color: ${statusColor}">${status}</span>
+                        </div>
+                        ${e.resumePlan ? `<p class="text-[10px] mt-1" style="color: var(--text-dim)">Resume: ${escapeHtml(e.resumePlan)}</p>` : ''}
+                    </div>
+                `;
+            }).join('');
+        }
+        function deleteEntry(id) {
+            entries = entries.filter(function (e) { return e.id !== id; });
+            renderAll();
+        }
+
+        // ===================== Physical Verification =====================
+        function renderVerify() {
+            const el = document.getElementById('menuPanel-verify');
+            const items = entries.filter(function (e) { return e.physical && !e.completed && !e.parked; });
+            if (items.length === 0) {
+                el.innerHTML = `<p class="text-[10px]" style="color: var(--text-dim)">No physical items pending.</p>`;
+                return;
+            }
+            el.innerHTML = items.map(function (e) {
+                if (e.physical === 'exercise') {
+                    return `
+                        <div class="p-3 rounded-lg border space-y-2" style="border-color: var(--line)">
+                            <span class="text-xs" style="color: var(--text)">${physicalLabel(e.physical)} — ${escapeHtml(e.text)}</span>
+                            <p class="text-[9px]" style="color: var(--text-dim)">Synced from HealthKit / Google Fit in the native app. Mocked here.</p>
+                            <div class="flex gap-2">
+                                <input id="steps-${e.id}" type="number" placeholder="Steps" class="flex-1 border rounded px-2 py-1 text-xs" style="border-color: var(--line)">
+                                <button onclick="verifyExercise(${e.id})" class="text-[10px] font-semibold px-3 rounded grad-btn">Sync</button>
+                            </div>
+                        </div>
+                    `;
+                }
+                if (e.physical === 'cook') {
+                    return `
+                        <div class="p-3 rounded-lg border space-y-2" style="border-color: var(--line)">
+                            <span class="text-xs" style="color: var(--text)">${physicalLabel(e.physical)} — ${escapeHtml(e.text)}</span>
+                            <input id="photo-${e.id}" type="file" accept="image/*" capture="environment" onchange="verifyCook(${e.id})" class="text-[10px]" style="color: var(--text-dim)">
+                        </div>
+                    `;
+                }
+                return `
+                    <div class="p-3 rounded-lg border space-y-2" style="border-color: var(--line)">
+                        <span class="text-xs" style="color: var(--text)">${physicalLabel(e.physical)} — ${escapeHtml(e.text)}</span>
+                        <button onclick="verifyOutside(${e.id})" class="text-[10px] font-semibold px-3 py-1 rounded grad-btn">Check my location</button>
+                        <p id="outsideStatus-${e.id}" class="text-[9px]" style="color: var(--text-dim)"></p>
+                    </div>
+                `;
+            }).join('');
+        }
+        function verifyExercise(id) {
+            const val = parseInt(document.getElementById('steps-' + id).value, 10);
+            if (!val || val <= 0) return;
+            const e = entries.find(function (x) { return x.id === id; });
+            e.verified = true; e.completed = true;
+            renderAll();
+        }
+        function verifyCook(id) {
+            const fileInput = document.getElementById('photo-' + id);
+            if (!fileInput.files || fileInput.files.length === 0) return;
+            const e = entries.find(function (x) { return x.id === id; });
+            e.verified = true; e.completed = true;
+            renderAll();
+        }
+        function haversineMeters(lat1, lon1, lat2, lon2) {
+            const R = 6371000;
+            const toRad = function (d) { return d * Math.PI / 180; };
+            const dLat = toRad(lat2 - lat1);
+            const dLon = toRad(lon2 - lon1);
+            const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        }
+        function setHomeLocation() {
+            if (!navigator.geolocation) {
+                document.getElementById('homeStatus').innerText = 'Geolocation not supported in this browser.';
+                return;
+            }
+            navigator.geolocation.getCurrentPosition(function (pos) {
+                settings.homeLat = pos.coords.latitude;
+                settings.homeLng = pos.coords.longitude;
+                save();
+                document.getElementById('homeStatus').innerText = 'Home set.';
+            }, function () {
+                document.getElementById('homeStatus').innerText = 'Location permission denied.';
+            });
+        }
+        function verifyOutside(id) {
+            const statusEl = document.getElementById('outsideStatus-' + id);
+            if (settings.homeLat === null) {
+                statusEl.innerText = 'Set your home location in Settings first.';
+                return;
+            }
+            if (!navigator.geolocation) {
+                statusEl.innerText = 'Geolocation not supported.';
+                return;
+            }
+            navigator.geolocation.getCurrentPosition(function (pos) {
+                const d = haversineMeters(settings.homeLat, settings.homeLng, pos.coords.latitude, pos.coords.longitude);
+                if (d >= 150) {
+                    const e = entries.find(function (x) { return x.id === id; });
+                    e.verified = true; e.completed = true;
+                    renderAll();
+                } else {
+                    statusEl.innerText = 'Still ~' + Math.round(d) + 'm from home — get further to verify.';
+                }
+            }, function () {
+                statusEl.innerText = 'Location permission denied.';
+            });
+        }
+
+        // ===================== Demo Reset =====================
+        function resetDemo() {
+            if (!confirm('Delete every task on this phone? This cannot be undone.')) return;
+            entries = [];
+            idCounter = 0;
+            renderAll();
+        }
+
+        
+
+        // ===================== Init =====================
+        function renderAll() {
+            save();
+            renderHero();
+            if (!document.getElementById('menuPanel-history').classList.contains('hidden')) renderHistory();
+            if (!document.getElementById('menuPanel-verify').classList.contains('hidden')) renderVerify();
+        }
+        document.addEventListener('DOMContentLoaded', function () {
+            load();
+            renderBackgroundWaves();
+            renderAll();
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.register('sw.js').catch(function () { /* offline cache unavailable */ });
+            }
+        });
+    </script>
+</body>
+</html>
