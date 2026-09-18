@@ -98,6 +98,10 @@
                 <button id="urgTodayBtn" onclick="setUrgency('today')" class="text-[10px] font-medium px-2 py-1 rounded-full border transition" style="border-color: var(--line); color: var(--text-dim)">Today</button>
                 <button id="urgWeekBtn" onclick="setUrgency('week')" class="text-[10px] font-medium px-2 py-1 rounded-full border transition" style="border-color: var(--line); color: var(--text-dim)">This week</button>
                 <button id="urgWheneverBtn" onclick="setUrgency('whenever')" class="text-[10px] font-medium px-2 py-1 rounded-full border transition" style="border-color: var(--line); color: var(--text-dim)">Whenever</button>
+                <label class="flex items-center gap-1 text-[9px] uppercase tracking-wide ml-auto" style="color: var(--text-dim)">
+                    by
+                    <input id="deadlineInput" type="time" class="border rounded-full px-2 py-1 text-[10px] focus:outline-none transition" style="border-color: var(--line); color-scheme: dark" aria-label="Deadline time">
+                </label>
             </div>
             <div id="parkPlanRow" class="hidden">
                 <input id="parkPlanInput" type="text" placeholder="When will you come back to this?" class="w-full border rounded-lg px-3 py-1.5 text-xs focus:outline-none transition" style="border-color: var(--line)" onfocus="this.style.borderColor='var(--indigo)'" onblur="this.style.borderColor='var(--line)'">
@@ -197,6 +201,40 @@
         const URGENCY_RANK = { now: 0, today: 1, week: 2, whenever: 3 };
 
         // ===================== Utilities =====================
+        // Pulls a clock time out of plain speech: "call clinic before 5",
+        // "at 14:30", "by 9pm", "tonight". Bare 1-7 reads as afternoon.
+        function parseDeadline(text) {
+            const t = (text || '').toLowerCase();
+            let m = t.match(/\b(?:by|before|at|due)\s+(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm)?\b/);
+            if (!m) m = t.match(/\b(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm)\b/);
+            if (m) {
+                let h = parseInt(m[1], 10);
+                const min = m[2] ? parseInt(m[2], 10) : 0;
+                const ap = m[3];
+                if (h > 24 || min > 59) return null;
+                if (ap === 'pm' && h < 12) h += 12;
+                else if (ap === 'am' && h === 12) h = 0;
+                else if (!ap && h >= 1 && h <= 7) h += 12;
+                if (h >= 24) h = h - 24;
+                return String(h).padStart(2, '0') + ':' + String(min).padStart(2, '0');
+            }
+            if (/\bnoon\b/.test(t)) return '12:00';
+            if (/\bmidnight\b/.test(t)) return '23:59';
+            if (/\btonight\b/.test(t)) return '21:00';
+            return null;
+        }
+        function nowHHMM() {
+            const d = new Date();
+            return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+        }
+        // A deadline is a time on the day the task was captured. Past that day,
+        // the task is late no matter what the clock says now.
+        function isOverdue(e) {
+            if (!e || !e.deadline || e.completed) return false;
+            const day = e.createdAt ? new Date(e.createdAt).toDateString() : new Date().toDateString();
+            if (day !== new Date().toDateString()) return true;
+            return e.deadline < nowHHMM();
+        }
         function escapeHtml(str) {
             const div = document.createElement('div');
             div.innerText = str == null ? '' : str;
@@ -237,6 +275,8 @@
             return entries.filter(function (e) { return !e.completed && !e.parked; });
         }
         function compareEntries(a, b) {
+            const ao = isOverdue(a), bo = isOverdue(b);
+            if (ao !== bo) return ao ? -1 : 1; // a passed deadline beats any urgency tag
             const ur = (URGENCY_RANK[a.urgency] ?? 3) - (URGENCY_RANK[b.urgency] ?? 3);
             if (ur !== 0) return ur;
             if (a.deadline && b.deadline && a.deadline !== b.deadline) return a.deadline.localeCompare(b.deadline);
@@ -249,7 +289,8 @@
         // rule that sorted them — so it can never flatter or lie.
         function assignmentReason(e, pool) {
             const bits = [];
-            if (e.deadline) bits.push('due ' + e.deadline);
+            if (isOverdue(e)) bits.push('overdue since ' + e.deadline);
+            else if (e.deadline) bits.push('due ' + e.deadline);
             else if (e.urgency === 'now') bits.push('you said Now');
             else if (e.urgency === 'today') bits.push('you said Today');
             else if (e.urgency === 'week') bits.push('you said this week');
@@ -393,6 +434,9 @@
                 return;
             }
 
+            const picked = document.getElementById('deadlineInput').value;
+            const deadline = picked || parseDeadline(text);
+
             idCounter += 1;
             entries.push({
                 id: idCounter,
@@ -406,7 +450,7 @@
                 skips: 0,
                 skippedAt: null,
                 skipLog: [],
-                deadline: null,
+                deadline: deadline || null,
                 physical: null,
                 completed: false,
                 verified: false,
@@ -417,6 +461,7 @@
             document.getElementById('parkToggle').checked = false;
             document.getElementById('parkPlanInput').value = '';
             document.getElementById('parkPlanRow').classList.add('hidden');
+            document.getElementById('deadlineInput').value = '';
             setTag(null);
             setUrgency(null);
             renderAll();
