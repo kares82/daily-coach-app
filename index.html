@@ -185,6 +185,11 @@
                 if (Array.isArray(d.entries)) entries = d.entries;
                 if (typeof d.idCounter === 'number') idCounter = d.idCounter;
                 if (d.settings) settings = Object.assign(settings, d.settings);
+                // yesterday's passes don't carry over: every task is fresh again today
+                const today = new Date().toDateString();
+                entries.forEach(function (e) {
+                    if (e.skippedAt && new Date(e.skippedAt).toDateString() !== today) e.skippedAt = null;
+                });
             } catch (err) { /* corrupt store: fall back to empty */ }
         }
         let currentTag = null;
@@ -231,22 +236,42 @@
         function pendingEntries() {
             return entries.filter(function (e) { return !e.completed && !e.parked; });
         }
+        function compareEntries(a, b) {
+            const ur = (URGENCY_RANK[a.urgency] ?? 3) - (URGENCY_RANK[b.urgency] ?? 3);
+            if (ur !== 0) return ur;
+            if (a.deadline && b.deadline && a.deadline !== b.deadline) return a.deadline.localeCompare(b.deadline);
+            if (a.deadline && !b.deadline) return -1;
+            if (!a.deadline && b.deadline) return 1;
+            return (a.createdAt || 0) - (b.createdAt || 0); // oldest thought first
+        }
+
+        // Says, in words, why this task and not another. Built from the same
+        // rule that sorted them — so it can never flatter or lie.
+        function assignmentReason(e, pool) {
+            const bits = [];
+            if (e.deadline) bits.push('due ' + e.deadline);
+            else if (e.urgency === 'now') bits.push('you said Now');
+            else if (e.urgency === 'today') bits.push('you said Today');
+            else if (e.urgency === 'week') bits.push('you said this week');
+            else bits.push('nothing here is more urgent');
+            const waiting = pool.length - 1;
+            if (waiting > 0) bits.push(waiting + (waiting === 1 ? ' other can wait' : ' others can wait'));
+            if (e.skips) bits.push('skipped ' + e.skips + (e.skips === 1 ? ' time' : ' times'));
+            return bits.join(' · ');
+        }
         function getCurrentAssignment() {
             const p = pendingEntries();
             if (p.length === 0) return null;
-            return p.slice().sort(function (a, b) {
-                const ur = (URGENCY_RANK[a.urgency] ?? 3) - (URGENCY_RANK[b.urgency] ?? 3);
-                if (ur !== 0) return ur;
-                if (!a.deadline && !b.deadline) return 0;
-                if (!a.deadline) return 1;
-                if (!b.deadline) return -1;
-                return a.deadline.localeCompare(b.deadline);
-            })[0];
+            const sorted = p.slice().sort(compareEntries);
+            const fresh = sorted.filter(function (e) { return !e.skippedAt; });
+            const pick = fresh.length ? fresh[0] : sorted[0];
+            return { entry: pick, reason: assignmentReason(pick, p), allSkipped: fresh.length === 0 };
         }
 
         function renderHero() {
             const el = document.getElementById('heroContent');
-            const a = getCurrentAssignment();
+            const cur = getCurrentAssignment();
+            const a = cur && cur.entry;
 
             if (!a) {
                 el.innerHTML = `
@@ -264,31 +289,62 @@
                 tier === 1 ? `<p class="text-xs font-medium" style="color: var(--indigo)">Still on this?</p>` :
                 `<p class="text-xs font-medium" style="color: var(--danger)">This was assigned. Close everything else until it's done.</p>`;
 
+            const skipBtn = `
+                    <button onclick="skipAssignment(${a.id})" class="text-xs px-4 py-2 rounded-full border transition" style="border-color: var(--line); color: var(--text-dim)">
+                        Not this one
+                    </button>`;
             let actionHtml = '';
             if (a.physical) {
                 actionHtml = `
-                    <button onclick="openMenu(); switchMenuPanel('verify')" class="text-xs font-semibold px-5 py-2 rounded-full transition ${actionClass}" style="${actionStyle}">
-                        Verify & Complete
-                    </button>
+                    <div class="flex items-center gap-2">
+                        <button onclick="openMenu(); switchMenuPanel('verify')" class="text-xs font-semibold px-5 py-2 rounded-full transition ${actionClass}" style="${actionStyle}">
+                            Verify & Complete
+                        </button>${skipBtn}
+                    </div>
                     <p class="text-[10px]" style="color: var(--text-dim)">${physicalLabel(a.physical)} — verified in the menu, not by tapping done.</p>
                 `;
             } else {
                 actionHtml = `
-                    <button onclick="completeAssignment(${a.id})" class="text-xs font-semibold px-5 py-2 rounded-full transition ${actionClass}" style="${actionStyle}">
-                        Done
-                    </button>
+                    <div class="flex items-center gap-2">
+                        <button onclick="completeAssignment(${a.id})" class="text-xs font-semibold px-5 py-2 rounded-full transition ${actionClass}" style="${actionStyle}">
+                            Done
+                        </button>${skipBtn}
+                    </div>
                 `;
             }
 
             el.innerHTML = `
                 <p class="font-serif italic text-xs" style="color: var(--text-dim)">Your one thing</p>
                 <h1 class="font-serif text-2xl leading-snug px-2" style="color: var(--text)">${escapeHtml(a.text)}</h1>
-                ${a.deadline ? `<p class="font-mono text-[11px]" style="color: var(--text-dim)">before ${a.deadline}</p>` : ''}
+                <p class="text-[11px] leading-relaxed px-6" style="color: var(--text-dim)">Why this one: ${escapeHtml(cur.reason)}</p>
+                ${cur.allSkipped ? `<p class="text-[11px] px-6" style="color: var(--danger)">You've passed on everything in the list. This is still the top of it.</p>` : ''}
+                ${a.firstStep
+                    ? `<p class="text-xs px-6" style="color: var(--text)">First move: ${escapeHtml(a.firstStep)}</p>`
+                    : `<button onclick="setFirstStep(${a.id})" class="text-[11px] underline underline-offset-4" style="color: var(--indigo)">Can't start? Name the first move</button>`}
                 ${tierLine}
                 <div class="pt-2 space-y-2 flex flex-col items-center">${actionHtml}</div>
             `;
         }
 
+        // No silent reroll: passing on an assignment costs you a typed reason.
+        function skipAssignment(id) {
+            const e = entries.find(function (x) { return x.id === id; });
+            if (!e) return;
+            const reason = (window.prompt('Passing on this. Why not this one, right now?') || '').trim();
+            if (!reason) return;
+            e.skips = (e.skips || 0) + 1;
+            e.skippedAt = Date.now();
+            e.skipLog = (e.skipLog || []).concat([{ reason: reason, at: Date.now() }]);
+            renderAll();
+        }
+        function setFirstStep(id) {
+            const e = entries.find(function (x) { return x.id === id; });
+            if (!e) return;
+            const step = (window.prompt('What is the first physical move? e.g. "Open laptop, click lesson 4"') || '').trim();
+            if (!step) return;
+            e.firstStep = step;
+            renderAll();
+        }
         function completeAssignment(id) {
             const e = entries.find(function (x) { return x.id === id; });
             if (e) { e.completed = true; e.escalationTier = 0; }
@@ -345,6 +401,11 @@
                 urgency: currentUrgency || 'today',
                 parked: parked,
                 resumePlan: parked ? resumePlan : null,
+                createdAt: Date.now(),
+                firstStep: null,
+                skips: 0,
+                skippedAt: null,
+                skipLog: [],
                 deadline: null,
                 physical: null,
                 completed: false,
