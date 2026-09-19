@@ -156,6 +156,10 @@
                 <button id="tagWorkBtn" onclick="setTag('work')" class="text-[10px] font-medium px-2.5 py-1 rounded-full border transition" style="border-color: var(--line); color: var(--text-dim)">Work</button>
                 <button id="tagPersonalBtn" onclick="setTag('personal')" class="text-[10px] font-medium px-2.5 py-1 rounded-full border transition" style="border-color: var(--line); color: var(--text-dim)">Personal</button>
                 <label class="flex items-center gap-1.5 text-[10px] ml-auto cursor-pointer" style="color: var(--text-dim)">
+                    <input type="checkbox" id="repeatToggle" style="accent-color: var(--lavender)">
+                    Every day
+                </label>
+                <label class="flex items-center gap-1.5 text-[10px] cursor-pointer" style="color: var(--text-dim)">
                     <input type="checkbox" id="parkToggle" onchange="toggleParkRow()" style="accent-color: var(--indigo)">
                     Park this
                 </label>
@@ -193,6 +197,7 @@
                 <div class="flex items-center justify-between px-4 py-4 border-b" style="border-color: var(--line)">
                     <div class="flex gap-4 text-xs">
                         <button id="menutab-history" onclick="switchMenuPanel('history')" class="font-medium" style="color: var(--text)">History</button>
+                        <button id="menutab-plan" onclick="switchMenuPanel('plan')" class="font-medium" style="color: var(--text-dim)">Plan</button>
                         <button id="menutab-verify" onclick="switchMenuPanel('verify')" class="font-medium relative" style="color: var(--text-dim)">Verify<span id="verifyDot" class="status-dot hidden absolute -top-0.5 -right-2.5 w-1.5 h-1.5 rounded-full"></span></button>
                         <button id="menutab-settings" onclick="switchMenuPanel('settings')" class="font-medium" style="color: var(--text-dim)">Settings</button>
                     </div>
@@ -203,6 +208,8 @@
 
                 <div class="flex-1 overflow-y-auto p-4">
                     <div id="menuPanel-history" class="space-y-2"></div>
+
+                    <div id="menuPanel-plan" class="hidden space-y-3"></div>
 
                     <div id="menuPanel-verify" class="hidden space-y-3"></div>
 
@@ -314,17 +321,21 @@
             const d = new Date(ts);
             return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate();
         }
+        function completionStamps() {
+            const out = [];
+            entries.forEach(function (e) {
+                if (e.completed && e.completedAt) out.push(e.completedAt);
+                (e.completions || []).forEach(function (t) { out.push(t); });
+            });
+            return out;
+        }
         function clearedToday() {
             const k = dayKey(Date.now());
-            return entries.filter(function (e) {
-                return e.completed && e.completedAt && dayKey(e.completedAt) === k;
-            }).length;
+            return completionStamps().filter(function (t) { return dayKey(t) === k; }).length;
         }
         function streakDays() {
             const days = {};
-            entries.forEach(function (e) {
-                if (e.completed && e.completedAt) days[dayKey(e.completedAt)] = true;
-            });
+            completionStamps().forEach(function (t) { days[dayKey(t)] = true; });
             const d = new Date();
             if (!days[dayKey(d.getTime())]) d.setDate(d.getDate() - 1); // today isn't lost until midnight
             let n = 0;
@@ -381,8 +392,73 @@
         }
 
         // ===================== Assignment Engine =====================
+        function byId(id) { return entries.find(function (e) { return e.id === id; }); }
+        function todayISO() {
+            const d = new Date();
+            return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+        }
+        // Steps that must finish before this one can start.
+        function blockersOf(e) {
+            return (e.blockedBy || []).map(byId).filter(function (b) { return b && !b.completed; });
+        }
+        // Someone else's move: it sleeps until the follow-up date.
+        function isWaiting(e) {
+            return !!(e.waitingUntil && todayISO() < e.waitingUntil);
+        }
+        function repeatDoneToday(e) {
+            return !!(e.repeat && e.lastDoneDay === dayKey(Date.now()));
+        }
+        // A routine appears 15 minutes before its time, not all day.
+        function routineDue(e) {
+            if (!e.repeat || !e.deadline) return true;
+            const parts = e.deadline.split(':');
+            const open = new Date();
+            open.setHours(parseInt(parts[0], 10), parseInt(parts[1], 10) - 15, 0, 0);
+            return Date.now() >= open.getTime();
+        }
+        function isReady(e) {
+            return !e.completed && !e.parked && !repeatDoneToday(e) &&
+                blockersOf(e).length === 0 && !isWaiting(e) && routineDue(e);
+        }
         function pendingEntries() {
-            return entries.filter(function (e) { return !e.completed && !e.parked; });
+            return entries.filter(isReady);
+        }
+        function blockedEntries() {
+            return entries.filter(function (e) {
+                return !e.completed && !e.parked && !repeatDoneToday(e) && !isReady(e);
+            });
+        }
+        function dependentsOf(id) {
+            return entries.filter(function (e) {
+                return !e.completed && (e.blockedBy || []).indexOf(id) >= 0;
+            });
+        }
+        // Everything downstream of this step, however deep the chain runs.
+        function unblocksCount(e) {
+            const seen = {};
+            const stack = [e.id];
+            let n = 0;
+            while (stack.length) {
+                dependentsOf(stack.pop()).forEach(function (d) {
+                    if (!seen[d.id]) { seen[d.id] = true; n++; stack.push(d.id); }
+                });
+            }
+            return n;
+        }
+        function wouldCycle(taskId, blockerId) {
+            if (taskId === blockerId) return true;
+            const seen = {};
+            const stack = [taskId];
+            while (stack.length) {
+                const cur = stack.pop();
+                const found = dependentsOf(cur).some(function (d) {
+                    if (d.id === blockerId) return true;
+                    if (!seen[d.id]) { seen[d.id] = true; stack.push(d.id); }
+                    return false;
+                });
+                if (found) return true;
+            }
+            return false;
         }
         function compareEntries(a, b) {
             const ao = isOverdue(a), bo = isOverdue(b);
@@ -392,6 +468,8 @@
             if (a.deadline && b.deadline && a.deadline !== b.deadline) return a.deadline.localeCompare(b.deadline);
             if (a.deadline && !b.deadline) return -1;
             if (!a.deadline && b.deadline) return 1;
+            const un = unblocksCount(b) - unblocksCount(a); // the step that frees the most work
+            if (un !== 0) return un;
             return (a.createdAt || 0) - (b.createdAt || 0); // oldest thought first
         }
 
@@ -407,6 +485,9 @@
             else bits.push('nothing here is more urgent');
             const waiting = pool.length - 1;
             if (waiting > 0) bits.push(waiting + (waiting === 1 ? ' other can wait' : ' others can wait'));
+            const frees = unblocksCount(e);
+            if (frees) bits.push('unblocks ' + frees + (frees === 1 ? ' other step' : ' other steps'));
+            if (e.repeat) bits.push('daily routine');
             if (e.skips) bits.push('skipped ' + e.skips + (e.skips === 1 ? ' time' : ' times'));
             return bits.join(' · ');
         }
@@ -443,6 +524,17 @@
             if (!a) {
                 const run = runLabel();
                 const today = clearedToday();
+                const held = blockedEntries();
+                if (held.length) {
+                    const waits = held.filter(isWaiting).length;
+                    el.style.setProperty('--aura-color', 'rgba(125, 211, 252, 0.18)');
+                    el.innerHTML = `
+                        <p class="display italic text-lg" style="color: var(--text)">Nothing you can start.</p>
+                        <p class="text-xs" style="color: var(--text-dim)">${held.length} step${held.length === 1 ? '' : 's'} held up${waits ? ', ' + waits + ' waiting on someone else' : ''}. Open Plan to see what's in the way.</p>
+                        ${today ? `<p class="text-[11px]" style="color: var(--text-dim)">${today} cleared today${run ? ' · ' + run : ''}</p>` : ''}
+                    `;
+                    return;
+                }
                 el.innerHTML = `
                     <p class="display italic text-lg" style="color: var(--text)">${today ? 'Nothing left.' : "What's in your head?"}</p>
                     <p class="text-xs" style="color: var(--text-dim)">${today
@@ -541,7 +633,12 @@
         let justCleared = null;
         function completeAssignment(id) {
             const e = entries.find(function (x) { return x.id === id; });
-            if (e) {
+            if (e && e.repeat) {
+                e.completions = (e.completions || []).concat([Date.now()]);
+                e.lastDoneDay = dayKey(Date.now());
+                e.escalationTier = 0;
+                justCleared = { text: e.text };
+            } else if (e) {
                 e.completed = true;
                 e.completedAt = Date.now();
                 e.escalationTier = 0;
@@ -617,6 +714,12 @@
                 skips: 0,
                 skippedAt: null,
                 skipLog: [],
+                blockedBy: [],
+                waitingWho: null,
+                waitingUntil: null,
+                repeat: document.getElementById('repeatToggle').checked ? 'daily' : null,
+                lastDoneDay: null,
+                completions: [],
                 deadline: deadline || null,
                 physical: null,
                 completed: false,
@@ -629,6 +732,7 @@
             document.getElementById('parkPlanInput').value = '';
             document.getElementById('parkPlanRow').classList.add('hidden');
             document.getElementById('deadlineInput').value = '';
+            document.getElementById('repeatToggle').checked = false;
             closeCapture();
             setTag(null);
             setUrgency(null);
@@ -673,11 +777,12 @@
             document.getElementById('menuOverlay').classList.add('hidden');
         }
         function switchMenuPanel(panel) {
-            ['history', 'verify', 'settings'].forEach(function (p) {
+            ['history', 'plan', 'verify', 'settings'].forEach(function (p) {
                 document.getElementById('menuPanel-' + p).classList.toggle('hidden', p !== panel);
                 document.getElementById('menutab-' + p).style.color = p === panel ? 'var(--text)' : 'var(--text-dim)';
             });
             if (panel === 'history') renderHistory();
+            if (panel === 'plan') renderPlan();
             if (panel === 'verify') renderVerify();
         }
 
@@ -709,6 +814,73 @@
                     </div>
                 `;
             }).join('');
+        }
+        // Plan: say what waits for what. The order falls out of that.
+        function renderPlan() {
+            const el = document.getElementById('menuPanel-plan');
+            const open = entries.filter(function (e) { return !e.completed && !e.parked; });
+            if (open.length === 0) {
+                el.innerHTML = `<p class="text-[10px]" style="color: var(--text-dim)">Nothing open. Capture a few steps, then set what waits for what.</p>`;
+                return;
+            }
+            const ordered = open.slice().sort(function (a, b) {
+                if (isReady(a) !== isReady(b)) return isReady(a) ? -1 : 1;
+                return compareEntries(a, b);
+            });
+            el.innerHTML = ordered.map(function (e) {
+                const blockers = blockersOf(e);
+                const frees = unblocksCount(e);
+                const options = open.filter(function (o) { return o.id !== e.id && !wouldCycle(e.id, o.id) && (e.blockedBy || []).indexOf(o.id) < 0; });
+                return `
+                    <div class="p-3 rounded-xl border space-y-2" style="border-color: var(--line); background: rgba(255,255,255,0.03)">
+                        <div class="flex justify-between items-start gap-2">
+                            <span class="text-xs" style="color: ${isReady(e) ? 'var(--text)' : 'var(--text-dim)'}">${escapeHtml(e.text)}</span>
+                            <span class="text-[9px] font-mono shrink-0" style="color: ${isReady(e) ? 'var(--cyan)' : 'var(--text-dim)'}">${isReady(e) ? 'ready' : isWaiting(e) ? 'waiting' : !routineDue(e) ? 'at ' + e.deadline : 'blocked'}</span>
+                        </div>
+                        ${frees ? `<p class="text-[9px] font-mono" style="color: var(--lavender)">frees ${frees} step${frees === 1 ? '' : 's'}</p>` : ''}
+                        ${blockers.length ? `<div class="flex flex-wrap gap-1.5">${blockers.map(function (b) {
+                            return `<button onclick="removeBlocker(${e.id}, ${b.id})" class="text-[9px] px-2 py-0.5 rounded-full border" style="border-color: var(--line); color: var(--text-dim)">after: ${escapeHtml(b.text)} ✕</button>`;
+                        }).join('')}</div>` : ''}
+                        ${options.length ? `<select onchange="addBlocker(${e.id}, this.value); this.value='';" class="w-full text-[10px] rounded-lg px-2 py-1 border" style="border-color: var(--line)">
+                            <option value="">waits for…</option>
+                            ${options.map(function (o) { return `<option value="${o.id}">${escapeHtml(o.text)}</option>`; }).join('')}
+                        </select>` : ''}
+                        <div class="space-y-1.5">
+                            <input id="who-${e.id}" type="text" value="${escapeHtml(e.waitingWho || '')}" placeholder="waiting on (who)" class="w-full text-[10px] rounded-lg px-2 py-1 border" style="border-color: var(--line)">
+                            <div class="flex gap-1.5">
+                                <input id="until-${e.id}" type="date" value="${e.waitingUntil || ''}" class="flex-1 min-w-0 text-[10px] rounded-lg px-2 py-1 border" style="border-color: var(--line)">
+                                <button onclick="setWaiting(${e.id})" class="text-[10px] px-3 py-1 rounded-lg grad-btn shrink-0">Set</button>
+                            </div>
+                        </div>
+                        ${e.waitingUntil ? `<p class="text-[9px] font-mono" style="color: var(--text-dim)">sleeps until ${e.waitingUntil}${e.waitingWho ? ' · ' + escapeHtml(e.waitingWho) : ''} <button onclick="clearWaiting(${e.id})" style="color: var(--rose)">clear</button></p>` : ''}
+                    </div>
+                `;
+            }).join('');
+        }
+        function addBlocker(id, blockerId) {
+            const e = byId(id), b = byId(parseInt(blockerId, 10));
+            if (!e || !b || wouldCycle(id, b.id)) return;
+            e.blockedBy = (e.blockedBy || []).concat([b.id]);
+            renderAll(); renderPlan();
+        }
+        function removeBlocker(id, blockerId) {
+            const e = byId(id);
+            if (!e) return;
+            e.blockedBy = (e.blockedBy || []).filter(function (x) { return x !== blockerId; });
+            renderAll(); renderPlan();
+        }
+        function setWaiting(id) {
+            const e = byId(id);
+            if (!e) return;
+            e.waitingWho = document.getElementById('who-' + id).value.trim() || null;
+            e.waitingUntil = document.getElementById('until-' + id).value || null;
+            renderAll(); renderPlan();
+        }
+        function clearWaiting(id) {
+            const e = byId(id);
+            if (!e) return;
+            e.waitingWho = null; e.waitingUntil = null;
+            renderAll(); renderPlan();
         }
         function deleteEntry(id) {
             entries = entries.filter(function (e) { return e.id !== id; });
