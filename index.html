@@ -132,16 +132,18 @@
         <g id="waveStrands"></g>
     </svg>
 
-    <div class="max-w-md mx-auto w-full flex-1 flex flex-col relative">
-
-        <!-- Header: minimal -->
-        <header class="flex justify-between items-center px-5 py-4 relative z-10">
+    <header class="w-full relative z-10">
+        <div class="w-full flex justify-between items-center px-5 py-4 sm:px-7">
             <span class="display italic text-sm" style="color: var(--text)">Daily Coach</span>
             <span id="statLine" class="font-mono text-[10px] ml-auto mr-3" style="color: var(--text-dim)"></span>
             <button onclick="openMenu()" class="hover:text-[var(--text)] transition text-sm" style="color: var(--text-dim)" aria-label="Menu">
                 <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M2 5h14M2 9h14M2 13h14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
             </button>
+        </div>
         </header>
+    <div class="max-w-md mx-auto w-full flex-1 flex flex-col relative">
+
+        <!-- Header: minimal -->
 
         <!-- Hero: the assignment (or capture prompt if empty) -->
         <main class="flex-1 flex items-center justify-center px-6 relative overflow-hidden z-10">
@@ -150,7 +152,9 @@
         </main>
 
         <!-- Capture bar: fixed at bottom, always reachable -->
-        <footer class="glass border-t px-4 py-3 space-y-2 relative z-10 rounded-t-[22px]" style="background: rgba(23, 19, 40, 0.72)">
+
+    <footer class="glass px-4 py-3 mx-3 mb-3 rounded-[22px] relative z-10" style="background: rgba(23, 19, 40, 0.72)">
+        <div class="max-w-md mx-auto w-full space-y-2">
             <div id="captureExtras" class="hidden space-y-2">
             <div class="flex items-center gap-2 flex-wrap">
                 <button id="tagWorkBtn" onclick="setTag('work')" class="text-[10px] font-medium px-2.5 py-1 rounded-full border transition" style="border-color: var(--line); color: var(--text-dim)">Work</button>
@@ -188,6 +192,7 @@
                     <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 7h10M8 3l4 4-4 4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 </button>
             </div>
+        </div>
         </footer>
 
         <!-- Slide-over menu: history, settings, verification -->
